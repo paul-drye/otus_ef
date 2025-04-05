@@ -78,7 +78,7 @@ class VoiceRecognizer:
         with open(embeddings_file, 'wb') as file:
             pickle.dump(self.speaker_embeddings, file)
     
-    def record_audio(self, output_path=None, duration=None, countdown=True):
+    def record_audio(self, output_path=None, duration=None, countdown=False):
         """
         Record audio from the microphone.
         
@@ -111,8 +111,6 @@ class VoiceRecognizer:
                 print(f"{i}...")
                 time.sleep(1)
             print("Recording NOW - please speak clearly...")
-        else:
-            print(f"Recording audio for {duration} seconds...")
         
         # Open stream
         try:
@@ -123,10 +121,9 @@ class VoiceRecognizer:
                             input_device_index=self.audio_device_index,
                             frames_per_buffer=chunk)
             
-            # Record audio with a progress bar
+            # Record audio
             frames = []
-            for i in tqdm(range(0, int(self.sample_rate / chunk * duration)), 
-                          desc="Recording", unit="chunk"):
+            for i in range(0, int(self.sample_rate / chunk * duration)):
                 data = stream.read(chunk, exception_on_overflow=False)
                 frames.append(data)
             
@@ -134,8 +131,6 @@ class VoiceRecognizer:
             stream.stop_stream()
             stream.close()
             p.terminate()
-            
-            print("Recording finished.")
             
             # Save the recorded audio to a WAV file
             with wave.open(output_path, 'wb') as wf:
@@ -162,20 +157,13 @@ class VoiceRecognizer:
             str: Transcribed text or None if failed
         """
         if audio_path is None:
-            print("\nPreparing to record speech for transcription...")
-            print("Please prepare to speak clearly when prompted.")
-            print("Try to speak in complete sentences for better results.")
-            
-            # Record audio with countdown
-            audio_path = self.record_audio(countdown=True)
-        
-        print("Transcribing speech...")
+            # Record audio without countdown for faster response
+            audio_path = self.record_audio(countdown=False)
         
         try:
             with sr.AudioFile(audio_path) as source:
                 audio_data = self.recognizer.record(source)
                 text = self.recognizer.recognize_google(audio_data)
-                print(f"Transcription: {text}")
                 
                 # Clean up temporary file if we created it
                 if os.path.exists(audio_path) and audio_path.startswith(self.voice_data_path):
@@ -204,14 +192,12 @@ class VoiceRecognizer:
             return None
         
         try:
-            print(f"Extracting embedding from {audio_path}")
             # Load audio using speechbrain's method or convert your audio file
             signal = self.encoder_model.load_audio(audio_path)
             
             # Get embedding (the model handles any necessary preprocessing)
             embedding = self.encoder_model.encode_batch(signal.unsqueeze(0))
             
-            print(f"Embedding extracted successfully, shape: {embedding.shape}")
             return embedding.squeeze(0)  # Remove batch dimension
             
         except Exception as e:
@@ -390,68 +376,49 @@ class VoiceRecognizer:
     
     def verify_speaker(self, audio_path=None):
         """
-        Verify if the speaker matches any enrolled user using SpeechBrain.
+        Verify a speaker's identity from an audio file or recording.
         
         Args:
-            audio_path (str, optional): Path to the audio file
-            
+            audio_path (str, optional): Path to an audio file for verification
+                                        If None, audio will be recorded
+        
         Returns:
-            tuple: (verified, user_name) - whether a speaker was verified and the user's name
+            Tuple[bool, str, float]: Verification result, user name if verified, and confidence score
         """
         if not self.model_loaded:
             print("Speaker verification model not loaded.")
-            return False, None
-        
-        if not self.speaker_embeddings:
-            print("No enrolled speakers. Please enroll a user first.")
-            return False, None
-        
-        print("\nStarting speaker verification...")
-        print("Please prepare to speak for a few seconds for voice verification.")
-        print("You can say something like: 'My voice is my password. Please verify me.'")
-        print("Speak clearly and at a normal pace.")
-        time.sleep(2)  # Give the user time to read instructions
+            return False, None, 0.0
         
         if audio_path is None:
-            # Record audio with countdown for verification
-            audio_path = self.record_audio(countdown=True)
+            # Record audio
+            audio_path = self.record_audio(countdown=False)
         
         # Extract speaker embedding
         embedding = self.extract_speaker_embedding(audio_path)
         
         if embedding is None:
-            return False, None
+            return False, None, 0.0
         
-        # Compare with enrolled speakers using cosine similarity
+        # If there are no enrolled speakers, verification fails
+        if not self.speaker_embeddings:
+            return False, None, 0.0
+        
+        # Compare with known speaker embeddings
         best_match = None
-        best_score = -float('inf')  # Initialize with lowest possible score
+        best_score = -1.0
         
         for name, stored_embedding in self.speaker_embeddings.items():
-            try:
-                # Compute cosine similarity (higher is better)
-                score = self._compute_similarity(embedding, stored_embedding)
-                
-                print(f"Similarity score for {name}: {score:.4f}")
-                
-                if score > best_score:
-                    best_score = score
-                    best_match = name
-            except Exception as e:
-                print(f"Error comparing with user {name}: {e}")
-                continue
+            score = self._compute_similarity(embedding, stored_embedding)
+            
+            if score > best_score:
+                best_score = score
+                best_match = name
         
-        # Clean up temporary audio file
-        if os.path.exists(audio_path) and audio_path.startswith(self.voice_data_path):
-            os.remove(audio_path)
-        
-        # Verify if the best match is above the threshold
-        # Note: For cosine similarity, higher is better (opposite of distance)
-        if best_match and best_score > self.verification_threshold:
-            print(f"Speaker verified as {best_match} (score: {best_score:.4f})")
-            return True, best_match
+        # Verify if the score exceeds the threshold
+        if best_score > self.verification_threshold:
+            return True, best_match, best_score
         else:
-            print(f"Speaker not verified (best score: {best_score:.4f}, threshold: {self.verification_threshold})")
-            return False, None
+            return False, None, best_score
     
     def _compute_similarity(self, embedding1, embedding2):
         """
@@ -491,10 +458,10 @@ if __name__ == "__main__":
         recognizer.enroll_user("Test User")
     
     print("Starting speaker verification...")
-    verified, name = recognizer.verify_speaker()
+    verified, name, score = recognizer.verify_speaker()
     
     if verified:
-        print(f"Verified: {name}")
+        print(f"Verified: {name} with confidence score {score:.4f}")
     else:
         print("Speaker not verified")
         
