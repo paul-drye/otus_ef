@@ -10,3 +10,7 @@ pyttsx3
 PyAudio # Required by SpeechRecognition for microphone input
 dlib # Required by face_recognition
 PyYAML # For loading config
+webrtcvad # For voice activity detection
+faster-whisper # For real-time transcription
+sounddevice # For audio playback
+numpy # For audio processing
