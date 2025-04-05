@@ -4,8 +4,8 @@ import sys
 import argparse
 import time
 
-from src.decision_engine import DecisionEngine
-from src.robot_interaction import RobotInteraction
+from decision_engine import DecisionEngine
+from robot_interaction import RobotInteraction
 
 
 def create_user(decision_engine, robot, args):
@@ -15,7 +15,10 @@ def create_user(decision_engine, robot, args):
     
     time.sleep(1)
     success = decision_engine.enroll_user(
-        args.name, face_samples=args.face_samples, voice_samples=args.voice_samples
+        args.name, 
+        face_samples=args.face_samples, 
+        voice_samples=args.voice_samples,
+        confirm=not args.no_confirm
     )
     
     if success:
@@ -115,6 +118,8 @@ def parse_args(args=None):
                                help='Number of face samples to capture')
     enroll_parser.add_argument('--voice-samples', type=int, default=1, 
                                help='Number of voice samples to record (always 1, kept for backward compatibility)')
+    enroll_parser.add_argument('--no-confirm', action='store_true',
+                               help='Skip confirmation steps during enrollment')
     
     # Authenticate command
     auth_parser = subparsers.add_parser('auth', help='Authenticate a user')

@@ -1,7 +1,7 @@
 import yaml
 import os
-from src.face_recognition_module import FaceRecognizer
-from src.voice_recognition_module import VoiceRecognizer
+from face_recognition_module import FaceRecognizer
+from voice_recognition_module import VoiceRecognizer
 
 
 class DecisionEngine:
@@ -14,7 +14,7 @@ class DecisionEngine:
         self.face_recognizer = FaceRecognizer(config_path)
         self.voice_recognizer = VoiceRecognizer(config_path)
     
-    def enroll_user(self, user_name, face_samples=5, voice_samples=1, delay=1):
+    def enroll_user(self, user_name, face_samples=5, voice_samples=1, delay=1, confirm=True):
         """
         Enroll a new user with both face and voice.
         
@@ -23,6 +23,7 @@ class DecisionEngine:
             face_samples (int): Number of face samples to capture
             voice_samples (int): Number of voice samples to record (default: 1 - only used for compatibility)
             delay (int): Delay between captures in seconds
+            confirm (bool): Whether to ask for confirmation during enrollment
             
         Returns:
             bool: True if enrollment was successful, False otherwise
@@ -32,7 +33,7 @@ class DecisionEngine:
         # First enroll face
         print("\n=== Face Enrollment ===")
         face_success = self.face_recognizer.enroll_user(
-            user_name, num_samples=face_samples, delay=delay
+            user_name, num_samples=face_samples, delay=delay, confirm=confirm
         )
         
         if not face_success:
@@ -42,7 +43,7 @@ class DecisionEngine:
         # Then enroll voice
         print("\n=== Voice Enrollment ===")
         voice_success = self.voice_recognizer.enroll_user(
-            user_name, num_samples=1, delay=delay
+            user_name, num_samples=1, delay=delay, confirm=confirm
         )
         
         if not voice_success:

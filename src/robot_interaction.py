@@ -13,7 +13,6 @@ class RobotInteraction:
         
         # Initialize text-to-speech engine
         self.tts_engine = pyttsx3.init()
-        
         # Configure voice properties
         self.tts_engine.setProperty('rate', self.tts_config['voice_rate'])
         self.tts_engine.setProperty('volume', self.tts_config['voice_volume'])

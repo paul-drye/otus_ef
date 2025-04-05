@@ -78,13 +78,14 @@ class VoiceRecognizer:
         with open(embeddings_file, 'wb') as file:
             pickle.dump(self.speaker_embeddings, file)
     
-    def record_audio(self, output_path=None, duration=None):
+    def record_audio(self, output_path=None, duration=None, countdown=True):
         """
         Record audio from the microphone.
         
         Args:
             output_path (str, optional): Path to save the recorded audio
             duration (int, optional): Duration in seconds to record
+            countdown (bool): Whether to show a countdown before recording
             
         Returns:
             str: Path to the recorded audio file
@@ -103,7 +104,15 @@ class VoiceRecognizer:
         # Initialize PyAudio
         p = pyaudio.PyAudio()
         
-        print(f"Recording audio for {duration} seconds...")
+        # Display countdown if requested
+        if countdown:
+            print("\nGet ready to speak!")
+            for i in range(3, 0, -1):
+                print(f"{i}...")
+                time.sleep(1)
+            print("Recording NOW - please speak clearly...")
+        else:
+            print(f"Recording audio for {duration} seconds...")
         
         # Open stream
         try:
@@ -153,7 +162,12 @@ class VoiceRecognizer:
             str: Transcribed text or None if failed
         """
         if audio_path is None:
-            audio_path = self.record_audio()
+            print("\nPreparing to record speech for transcription...")
+            print("Please prepare to speak clearly when prompted.")
+            print("Try to speak in complete sentences for better results.")
+            
+            # Record audio with countdown
+            audio_path = self.record_audio(countdown=True)
         
         print("Transcribing speech...")
         
@@ -162,6 +176,11 @@ class VoiceRecognizer:
                 audio_data = self.recognizer.record(source)
                 text = self.recognizer.recognize_google(audio_data)
                 print(f"Transcription: {text}")
+                
+                # Clean up temporary file if we created it
+                if os.path.exists(audio_path) and audio_path.startswith(self.voice_data_path):
+                    os.remove(audio_path)
+                
                 return text
         except sr.UnknownValueError:
             print("Speech Recognition could not understand audio")
@@ -201,7 +220,7 @@ class VoiceRecognizer:
             traceback.print_exc()
             return None
     
-    def enroll_user(self, user_name, num_samples=1, delay=1):
+    def enroll_user(self, user_name, num_samples=1, delay=1, confirm=True):
         """
         Enroll a new user by recording voice samples.
         
@@ -209,6 +228,7 @@ class VoiceRecognizer:
             user_name (str): Name of the user to enroll
             num_samples (int): Number of voice samples to record (default is 1)
             delay (int): Delay between recordings in seconds
+            confirm (bool): Whether to ask for confirmation before saving
             
         Returns:
             bool: True if enrollment was successful, False otherwise
@@ -217,31 +237,156 @@ class VoiceRecognizer:
             print("Speaker verification model not loaded. Cannot enroll user.")
             return False
         
-        print(f"Enrolling user: {user_name}")
-        print("Please speak clearly for voice recognition.")
+        # Create enrollment debug directory
+        debug_dir = os.path.join(self.voice_data_path, f"debug_{user_name}_{int(time.time())}")
+        os.makedirs(debug_dir, exist_ok=True)
         
-        # Record audio sample
-        audio_path = self.record_audio(duration=15)
+        # Enrollment loop - continue until user is satisfied or cancels
+        enrollment_complete = False
         
-        # Extract speaker embedding
-        embedding = self.extract_speaker_embedding(audio_path)
-        
-        # Clean up temporary audio file
-        if os.path.exists(audio_path):
-            os.remove(audio_path)
-        
-        if embedding is not None:
-            # Store the embedding directly
+        while not enrollment_complete:
+            print(f"\nEnrolling user: {user_name}")
+            print("Please prepare to speak for about 15 seconds.")
+            print("Speak continuously and clearly for best results.")
+            print("\nSample phrases you can use:")
+            print(" - 'The quick brown fox jumps over the lazy dog. The five boxing wizards jump quickly.'")
+            print(" - 'My voice is my password. Please verify me with my voice print.'")
+            print(" - Or describe your favorite place, hobby, or tell a short story.")
+            time.sleep(3)  # Give the user time to read instructions
+            
+            # Record audio sample with countdown
+            audio_path = self.record_audio(duration=15, countdown=True)
+            
+            # Save a copy for debugging/verification
+            debug_audio_path = os.path.join(debug_dir, f"enrollment_{int(time.time())}.wav")
+            import shutil
+            shutil.copy2(audio_path, debug_audio_path)
+            print(f"Saved enrollment audio to {debug_audio_path}")
+            
+            # Extract speaker embedding
+            embedding = self.extract_speaker_embedding(audio_path)
+            
+            if embedding is None:
+                print(f"Failed to extract voice embedding from the recording.")
+                
+                if confirm:
+                    retry = input("\nFailed to process voice. Would you like to try again? (y/n): ").lower().strip()
+                    if retry == 'y' or retry == 'yes':
+                        # Clean up temporary audio file
+                        if os.path.exists(audio_path):
+                            os.remove(audio_path)
+                        continue
+                    else:
+                        return False
+                else:
+                    # Clean up temporary audio file
+                    if os.path.exists(audio_path):
+                        os.remove(audio_path)
+                    return False
+            
+            # Test verification with the same recording
+            print("\nTesting voice quality with a verification test...")
+            
+            # Convert embedding to match storage format
+            test_embedding = embedding
+            
+            # Compare with existing users (if any)
+            potential_matches = []
+            
+            for name, stored_embedding in self.speaker_embeddings.items():
+                if name != user_name:  # Skip if comparing to a previous version of the same user
+                    # Compute similarity
+                    score = self._compute_similarity(test_embedding, stored_embedding)
+                    
+                    # Check if too similar to an existing user
+                    if score > self.verification_threshold:
+                        potential_matches.append((name, score))
+            
+            # Sort potential matches by score (highest first)
+            potential_matches.sort(key=lambda x: x[1], reverse=True)
+            
+            # Warn if voice is too similar to existing users
+            if potential_matches:
+                print("\nWARNING: Your voice is similar to existing enrolled users:")
+                for name, score in potential_matches:
+                    print(f" - {name}: similarity score {score:.4f}")
+                
+                if confirm:
+                    print("\nThis might cause confusion during verification.")
+                    proceed = input("Would you like to proceed anyway or try again with a more distinctive voice? (p/t): ").lower().strip()
+                    
+                    if proceed == 't' or proceed == 'try':
+                        # Clean up temporary audio file
+                        if os.path.exists(audio_path):
+                            os.remove(audio_path)
+                        continue
+            
+            # Ask for confirmation if requested
+            if confirm:
+                # Transcribe the audio to let the user verify what was recorded
+                try:
+                    with sr.AudioFile(audio_path) as source:
+                        audio_data = self.recognizer.record(source)
+                        transcription = self.recognizer.recognize_google(audio_data)
+                        print(f"\nTranscription of your enrollment audio: \"{transcription}\"")
+                except Exception as e:
+                    print(f"Could not transcribe audio: {e}")
+                
+                # Let the user hear their recording
+                play_back = input("\nWould you like to listen to your recording? (y/n): ").lower().strip()
+                if play_back == 'y' or play_back == 'yes':
+                    try:
+                        print("Playing back your recording...")
+                        # Try to use platform-specific audio playback
+                        import platform
+                        system = platform.system()
+                        
+                        if system == 'Darwin':  # macOS
+                            os.system(f"afplay {audio_path}")
+                        elif system == 'Windows':
+                            os.system(f"start {audio_path}")
+                        else:  # Linux or other
+                            try:
+                                import sounddevice as sd
+                                import soundfile as sf
+                                data, fs = sf.read(audio_path)
+                                sd.play(data, fs)
+                                sd.wait()
+                            except ImportError:
+                                os.system(f"aplay {audio_path}")
+                    except Exception as e:
+                        print(f"Error playing audio: {e}")
+                
+                # Ask user to confirm enrollment
+                confirmation = input(f"\nDo you want to save this voice enrollment for {user_name}? (y/n): ").lower().strip()
+                
+                if confirmation != 'y' and confirmation != 'yes':
+                    retry = input("Would you like to try again? (y/n): ").lower().strip()
+                    if retry == 'y' or retry == 'yes':
+                        # Clean up temporary audio file
+                        if os.path.exists(audio_path):
+                            os.remove(audio_path)
+                        continue
+                    else:
+                        return False
+            
+            # User confirmed or confirmation not required
+            # Store the embedding
             self.speaker_embeddings[user_name] = embedding
             
             # Save updated embeddings
             self._save_speaker_embeddings()
             
             print(f"User {user_name} enrolled successfully")
+            print(f"Debug audio saved to {debug_audio_path}")
+            
+            # Clean up temporary audio file
+            if os.path.exists(audio_path):
+                os.remove(audio_path)
+            
+            # Set flag to exit the loop
+            enrollment_complete = True
             return True
-        else:
-            print(f"Failed to enroll user {user_name}. Could not process voice sample.")
-            return False
     
     def verify_speaker(self, audio_path=None):
         """
@@ -261,8 +406,15 @@ class VoiceRecognizer:
             print("No enrolled speakers. Please enroll a user first.")
             return False, None
         
+        print("\nStarting speaker verification...")
+        print("Please prepare to speak for a few seconds for voice verification.")
+        print("You can say something like: 'My voice is my password. Please verify me.'")
+        print("Speak clearly and at a normal pace.")
+        time.sleep(2)  # Give the user time to read instructions
+        
         if audio_path is None:
-            audio_path = self.record_audio()
+            # Record audio with countdown for verification
+            audio_path = self.record_audio(countdown=True)
         
         # Extract speaker embedding
         embedding = self.extract_speaker_embedding(audio_path)

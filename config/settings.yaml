@@ -16,5 +16,5 @@ robot_interaction:
 voice_recognition:
   record_duration: 5
   sample_rate: 16000
-  verification_threshold: 0.65
+  verification_threshold: 0.5
 

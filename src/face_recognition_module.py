@@ -168,7 +168,7 @@ class FaceRecognizer:
         
         return success
     
-    def enroll_user(self, user_name, num_samples=5, delay=1):
+    def enroll_user(self, user_name, num_samples=5, delay=1, confirm=True):
         """
         Enroll a new user by capturing face samples.
         
@@ -176,6 +176,7 @@ class FaceRecognizer:
             user_name (str): Name of the user to enroll
             num_samples (int): Number of face samples to capture
             delay (int): Delay between captures in seconds
+            confirm (bool): Whether to ask for confirmation before saving
         
         Returns:
             bool: True if enrollment was successful, False otherwise
@@ -183,80 +184,267 @@ class FaceRecognizer:
         if not self._initialize_camera():
             return False
         
-        face_encodings = []
+        # Create directory for debug images
+        debug_dir = os.path.join(self.face_data_path, f"debug_{user_name}_{int(time.time())}")
+        os.makedirs(debug_dir, exist_ok=True)
+        print(f"Saving debug images to: {debug_dir}")
         
-        print(f"Enrolling user: {user_name}")
-        print(f"Capturing {num_samples} face samples. Please look at the camera.")
+        # Enrollment loop - continue until user is satisfied or cancels
+        enrollment_complete = False
         
-        for i in range(num_samples):
-            print(f"Capturing sample {i+1}/{num_samples} in 3 seconds...")
-            time.sleep(delay)
+        while not enrollment_complete:
+            face_encodings = []
+            captured_frames = []
             
-            ret, frame = self.camera.read()
-            if not ret:
-                print("Failed to capture image from camera")
-                continue
+            print(f"\nEnrolling user: {user_name}")
+            print(f"Capturing {num_samples} face samples. Please look at the camera.")
             
-            # Convert BGR to RGB (face_recognition uses RGB)
-            rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            # First check if camera is working and not frozen
+            print("Testing camera stream before enrollment...")
+            prev_frame = None
+            identical_frames = 0
+            max_identical = 5  # Maximum number of identical frames before warning
             
-            # Find face locations in the frame
-            face_locations = face_recognition.face_locations(rgb_frame)
+            # Capture a few frames to warm up the camera
+            for _ in range(10):
+                ret, frame = self.camera.read()
+                time.sleep(0.1)
             
-            if not face_locations:
-                print("No face detected. Please ensure your face is visible to the camera.")
+            # Check for identical frames (possible frozen camera)
+            for i in range(10):
+                ret, frame = self.camera.read()
+                if not ret:
+                    print("Failed to capture image from camera during test")
+                    continue
+                    
+                # Save first test frame
+                if i == 0:
+                    test_frame_path = os.path.join(debug_dir, f"camera_test.jpg")
+                    cv2.imwrite(test_frame_path, frame)
+                    
+                # Compare with previous frame if available
+                if prev_frame is not None:
+                    # Calculate difference between frames
+                    diff = cv2.absdiff(frame, prev_frame)
+                    non_zero_count = np.count_nonzero(diff)
+                    total_pixels = frame.shape[0] * frame.shape[1] * frame.shape[2]
+                    diff_percentage = (non_zero_count / total_pixels) * 100
+                    
+                    print(f"Frame {i} difference: {diff_percentage:.2f}%")
+                    
+                    # If frames are very similar, increment counter
+                    if diff_percentage < 0.1:  # Less than 0.1% difference
+                        identical_frames += 1
+                        if identical_frames >= max_identical:
+                            print("WARNING: Camera may be frozen - detecting nearly identical frames")
+                            # Save the problematic frames
+                            cv2.imwrite(os.path.join(debug_dir, f"frozen_test_1.jpg"), prev_frame)
+                            cv2.imwrite(os.path.join(debug_dir, f"frozen_test_2.jpg"), frame)
                 
-                # Show the frame so user can see what the camera sees
-                cv2.putText(frame, "No face detected", (10, 30), 
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
-                cv2.imshow('Enrollment', frame)
-                cv2.waitKey(1000)  # Wait 1 second
-                continue
+                prev_frame = frame.copy()
+                time.sleep(0.1)
             
-            # If multiple faces are detected, use the largest face (closest to camera)
-            if len(face_locations) > 1:
-                print(f"Multiple faces detected. Using the largest face.")
-                # Calculate area of each face and find the largest
-                areas = [(right-left)*(bottom-top) for top, right, bottom, left in face_locations]
-                largest_face_idx = areas.index(max(areas))
-                face_locations = [face_locations[largest_face_idx]]
-            
-            # Get face encodings
-            current_encodings = face_recognition.face_encodings(rgb_frame, face_locations)
-            
-            if current_encodings:
-                face_encodings.append(current_encodings[0])
+            # Proceed with enrollment
+            for i in range(num_samples):
+                print(f"Capturing sample {i+1}/{num_samples} in 3 seconds...")
                 
-                # Show the frame with face highlighted
-                top, right, bottom, left = face_locations[0]
-                cv2.rectangle(frame, (left, top), (right, bottom), (0, 255, 0), 2)
-                cv2.putText(frame, f"Sample {i+1} captured", (left, top - 10), 
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
-                cv2.imshow('Enrollment', frame)
-                cv2.waitKey(1000)  # Show the successful capture for 1 second
+                # Countdown with visible feedback
+                for j in range(3, 0, -1):
+                    print(f"{j}...")
+                    ret, countdown_frame = self.camera.read()
+                    if ret:
+                        cv2.putText(countdown_frame, f"Capturing in {j}...", (10, 30), 
+                                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+                        cv2.imshow('Enrollment', countdown_frame)
+                        cv2.waitKey(1)
+                    time.sleep(1)
+                    
+                # Capture frame
+                ret, frame = self.camera.read()
+                if not ret:
+                    print("Failed to capture image from camera")
+                    # Save empty frame for debugging
+                    empty_frame = np.zeros((self.frame_height, self.frame_width, 3), dtype=np.uint8)
+                    cv2.putText(empty_frame, "CAPTURE FAILED", (50, 50), 
+                                cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+                    cv2.imwrite(os.path.join(debug_dir, f"failed_capture_{i+1}.jpg"), empty_frame)
+                    continue
                 
-                print(f"Sample {i+1} captured successfully")
+                # Save the raw captured frame (regardless of face detection)
+                raw_frame_path = os.path.join(debug_dir, f"raw_frame_{i+1}.jpg")
+                cv2.imwrite(raw_frame_path, frame)
+                print(f"Saved raw frame {i+1} to {raw_frame_path}")
+                
+                # Check if this frame is identical to previous frames
+                if captured_frames:
+                    for j, prev_frame in enumerate(captured_frames):
+                        diff = cv2.absdiff(frame, prev_frame)
+                        non_zero_count = np.count_nonzero(diff)
+                        total_pixels = frame.shape[0] * frame.shape[1] * frame.shape[2]
+                        diff_percentage = (non_zero_count / total_pixels) * 100
+                        print(f"Frame {i+1} difference from frame {j+1}: {diff_percentage:.2f}%")
+                        
+                        if diff_percentage < 0.5:  # Less than 0.5% difference
+                            print(f"WARNING: Frame {i+1} is very similar to frame {j+1}")
+                
+                # Store this frame for later comparison
+                captured_frames.append(frame.copy())
+                
+                # Convert BGR to RGB (face_recognition uses RGB)
+                rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                
+                # Find face locations in the frame
+                face_locations = face_recognition.face_locations(rgb_frame)
+                
+                if not face_locations:
+                    print("No face detected. Please ensure your face is visible to the camera.")
+                    
+                    # Save the no-face frame with annotation
+                    no_face_frame = frame.copy()
+                    cv2.putText(no_face_frame, "No face detected", (10, 30), 
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+                    cv2.imwrite(os.path.join(debug_dir, f"no_face_{i+1}.jpg"), no_face_frame)
+                    
+                    # Show the frame so user can see what the camera sees
+                    cv2.imshow('Enrollment', no_face_frame)
+                    cv2.waitKey(1000)  # Wait 1 second
+                    continue
+                
+                # If multiple faces are detected, use the largest face (closest to camera)
+                if len(face_locations) > 1:
+                    print(f"Multiple faces detected. Using the largest face.")
+                    # Calculate area of each face and find the largest
+                    areas = [(right-left)*(bottom-top) for top, right, bottom, left in face_locations]
+                    largest_face_idx = areas.index(max(areas))
+                    face_locations = [face_locations[largest_face_idx]]
+                
+                # Get face encodings
+                current_encodings = face_recognition.face_encodings(rgb_frame, face_locations)
+                
+                if current_encodings:
+                    face_encodings.append(current_encodings[0])
+                    
+                    # Extract face region for saving
+                    top, right, bottom, left = face_locations[0]
+                    face_img = frame[top:bottom, left:right]
+                    face_img_path = os.path.join(debug_dir, f"face_{i+1}.jpg")
+                    cv2.imwrite(face_img_path, face_img)
+                    print(f"Saved face {i+1} to {face_img_path}")
+                    
+                    # Draw rectangle on full frame and save
+                    annotated_frame = frame.copy()
+                    cv2.rectangle(annotated_frame, (left, top), (right, bottom), (0, 255, 0), 2)
+                    cv2.putText(annotated_frame, f"Sample {i+1} captured", (left, top - 10), 
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+                    cv2.imwrite(os.path.join(debug_dir, f"detected_face_{i+1}.jpg"), annotated_frame)
+                    
+                    # Display the annotated frame
+                    cv2.imshow('Enrollment', annotated_frame)
+                    cv2.waitKey(1000)  # Show the successful capture for 1 second
+                    
+                    print(f"Sample {i+1} captured successfully")
+                else:
+                    print(f"Failed to encode face in sample {i+1}")
+                    # Save failed encoding frame
+                    failed_frame = frame.copy()
+                    top, right, bottom, left = face_locations[0]
+                    cv2.rectangle(failed_frame, (left, top), (right, bottom), (0, 0, 255), 2)
+                    cv2.putText(failed_frame, "Failed to encode", (left, top - 10), 
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+                    cv2.imwrite(os.path.join(debug_dir, f"failed_encoding_{i+1}.jpg"), failed_frame)
+            
+            cv2.destroyAllWindows()
+            
+            # Check if we have enough face samples
+            if len(face_encodings) == 0:
+                print(f"Failed to enroll user {user_name}. No valid face encodings captured.")
+                
+                if confirm:
+                    retry = input("\nNo faces were detected. Would you like to try again? (y/n): ").lower().strip()
+                    if retry == 'y' or retry == 'yes':
+                        continue
+                    else:
+                        return False
+                else:
+                    return False
+            
+            # If not enough samples were captured, ask if the user wants to proceed
+            if len(face_encodings) < num_samples and confirm:
+                print(f"\nOnly {len(face_encodings)}/{num_samples} valid face samples were captured.")
+                proceed = input("Would you like to proceed with these samples or try again? (p/t): ").lower().strip()
+                
+                if proceed == 't' or proceed == 'try':
+                    continue  # Try enrollment again
+            
+            # Ask for confirmation if requested
+            if confirm:
+                # Show a summary of the captured faces
+                summary_image = None
+                
+                # Create a grid of captured faces if available
+                if len(face_encodings) > 0:
+                    # Collect all successful face images
+                    faces = []
+                    for i in range(1, num_samples + 1):
+                        face_path = os.path.join(debug_dir, f"face_{i}.jpg")
+                        if os.path.exists(face_path):
+                            face = cv2.imread(face_path)
+                            if face is not None:
+                                # Resize to common size
+                                face = cv2.resize(face, (150, 150))
+                                faces.append(face)
+                    
+                    if faces:
+                        # Create a grid layout
+                        rows = (len(faces) + 2) // 3  # Ceiling division
+                        cols = min(3, len(faces))
+                        
+                        # Create blank canvas
+                        summary_image = np.zeros((rows * 150, cols * 150, 3), dtype=np.uint8)
+                        
+                        # Place faces in grid
+                        for i, face in enumerate(faces):
+                            r, c = i // cols, i % cols
+                            summary_image[r*150:(r+1)*150, c*150:(c+1)*150] = face
+                        
+                        # Show the summary image
+                        cv2.imshow('Enrollment Summary', summary_image)
+                        cv2.waitKey(1)
+                
+                # Ask user to confirm enrollment
+                confirmation = input(f"\nDo you want to save this enrollment for {user_name}? (y/n): ").lower().strip()
+                
+                if summary_image is not None:
+                    cv2.destroyAllWindows()
+                
+                if confirmation != 'y' and confirmation != 'yes':
+                    retry = input("Would you like to try again? (y/n): ").lower().strip()
+                    if retry == 'y' or retry == 'yes':
+                        continue
+                    else:
+                        return False
+            
+            # User confirmed or confirmation not required
+            if face_encodings:
+                # Calculate the average encoding for more robust recognition
+                average_encoding = np.mean(face_encodings, axis=0)
+                
+                # Add to known faces
+                self.known_face_encodings.append(average_encoding)
+                self.known_face_names.append(user_name)
+                
+                # Save the updated encodings
+                self._save_known_faces()
+                
+                print(f"User {user_name} enrolled successfully with {len(face_encodings)} face samples")
+                print(f"Debug images saved to {debug_dir}")
+                
+                # Set flag to exit the loop
+                enrollment_complete = True
+                return True
             else:
-                print(f"Failed to encode face in sample {i+1}")
-        
-        cv2.destroyAllWindows()
-        
-        if face_encodings:
-            # Calculate the average encoding for more robust recognition
-            average_encoding = np.mean(face_encodings, axis=0)
-            
-            # Add to known faces
-            self.known_face_encodings.append(average_encoding)
-            self.known_face_names.append(user_name)
-            
-            # Save updated encodings
-            self._save_known_faces()
-            
-            print(f"User {user_name} enrolled successfully")
-            return True
-        else:
-            print(f"Failed to enroll user {user_name}. No valid face samples captured.")
-            return False
+                print(f"Failed to enroll user {user_name}. No valid face encodings captured.")
+                return False
     
     def recognize_face(self, display_video=False, recognition_time=5):
         """
