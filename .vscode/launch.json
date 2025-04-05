@@ -76,6 +76,15 @@
             "justMyCode": false
         },
         {
+            "name": "SpeechBrain: Embedding Comparison",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "tests.test_speechbrain_verification",
+            "args": ["compare"],
+            "console": "integratedTerminal",
+            "justMyCode": false
+        },
+        {
             "name": "SpeechBrain: Enrollment",
             "type": "debugpy",
             "request": "launch",

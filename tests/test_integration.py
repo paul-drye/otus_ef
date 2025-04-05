@@ -49,7 +49,9 @@ def test_full_enrollment_verification_flow(user_name="Test_Integration_User"):
         return False
         
     if user_name in voice_users:
+        embedding = engine.voice_recognizer.speaker_embeddings[user_name]
         print(f"✅ User '{user_name}' found in voice recognition database.")
+        print(f"   Voice embedding shape: {embedding.shape}")
     else:
         print(f"❌ User '{user_name}' NOT found in voice recognition database.")
         return False

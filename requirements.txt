@@ -1,12 +1,21 @@
-opencv-python
-face_recognition
-SpeechRecognition
-speechbrain
-torch
-torchaudio
-tqdm
-pyttsx3
-# gTTS # Uncomment if you prefer Google TTS
-PyAudio # Required by SpeechRecognition for microphone input
-dlib # Required by face_recognition
-PyYAML # For loading config
+# Core dependencies
+numpy==1.24.3
+torch==2.0.1
+scipy==1.10.1
+matplotlib==3.7.1
+PyAudio==0.2.13
+speechbrain==0.5.14
+
+# Audio processing
+librosa==0.10.0.post2
+soundfile==0.12.1
+
+# Speech recognition for transcription
+SpeechRecognition==3.10.0
+
+# Utilities
+tqdm==4.65.0
+pydub==0.25.1
+
+# Optional: For GPU support
+# torchaudio==2.0.2

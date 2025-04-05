@@ -56,8 +56,11 @@ Test various aspects of the SpeechBrain-based voice recognition module:
 # Test if the speaker verification model loads correctly
 python -m tests.test_speechbrain_verification model
 
-# Test embedding extraction
-python -m tests.test_speechbrain_verification embedding
+# Test embedding extraction from an audio sample
+python -m tests.test_speechbrain_verification embedding --audio sample.wav
+
+# Test embedding comparison between two audio samples
+python -m tests.test_speechbrain_verification compare --file1 sample1.wav --file2 sample2.wav
 
 # Test user enrollment
 python -m tests.test_speechbrain_verification enroll --name "Your Name"

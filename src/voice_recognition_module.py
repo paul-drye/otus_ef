@@ -27,7 +27,7 @@ class VoiceRecognizer:
         # Parameters
         self.record_duration = self.voice_config['record_duration']
         self.sample_rate = self.voice_config['sample_rate']
-        self.verification_threshold = self.voice_config.get('verification_threshold', 0.25)
+        self.verification_threshold = self.voice_config.get('verification_threshold', 0.5)
         
         # Get audio device index from config if available
         self.audio_device_index = None
@@ -43,10 +43,16 @@ class VoiceRecognizer:
         # Initialize speaker verification model from SpeechBrain
         try:
             # Import here to avoid loading the model if not needed
-            from speechbrain.inference.speaker import EncoderClassifier
+            from speechbrain.inference.speaker import EncoderClassifier, SpeakerRecognition
             
             print("Loading SpeechBrain speaker verification model...")
-            self.verification_model = EncoderClassifier.from_hparams(
+            # Load the encoder for extracting embeddings
+            self.encoder_model = EncoderClassifier.from_hparams(
+                source="speechbrain/spkrec-ecapa-voxceleb",
+                savedir=os.path.join(self.model_path, "speechbrain_spkrec")
+            )
+            # Load the verification model for comparing embeddings
+            self.verification_model = SpeakerRecognition.from_hparams(
                 source="speechbrain/spkrec-ecapa-voxceleb",
                 savedir=os.path.join(self.model_path, "speechbrain_spkrec")
             )
@@ -161,12 +167,23 @@ class VoiceRecognizer:
                 audio_data = self.recognizer.record(source)
                 text = self.recognizer.recognize_google(audio_data)
                 print(f"Transcription: {text}")
+                
+                # Clean up temporary audio file
+                if os.path.exists(audio_path) and audio_path.startswith(self.voice_data_path):
+                    os.remove(audio_path)
+                
                 return text
         except sr.UnknownValueError:
             print("Speech Recognition could not understand audio")
+            # Clean up temporary audio file
+            if os.path.exists(audio_path) and audio_path.startswith(self.voice_data_path):
+                os.remove(audio_path)
             return None
         except sr.RequestError as e:
             print(f"Could not request results from Speech Recognition service; {e}")
+            # Clean up temporary audio file
+            if os.path.exists(audio_path) and audio_path.startswith(self.voice_data_path):
+                os.remove(audio_path)
             return None
     
     def extract_speaker_embedding(self, audio_path):
@@ -185,11 +202,11 @@ class VoiceRecognizer:
         
         try:
             print(f"Extracting embedding from {audio_path}")
-            # Load audio using speechbrain's method or convert your audio file
-            signal = self.verification_model.load_audio(audio_path)
+            # Load audio using speechbrain's method
+            signal = self.encoder_model.load_audio(audio_path)
             
             # Get embedding (the model handles any necessary preprocessing)
-            embedding = self.verification_model.encode_batch(signal.unsqueeze(0))
+            embedding = self.encoder_model.encode_batch(signal.unsqueeze(0))
             
             print(f"Embedding extracted successfully, shape: {embedding.shape}")
             return embedding.squeeze(0)  # Remove batch dimension
@@ -202,12 +219,12 @@ class VoiceRecognizer:
     
     def enroll_user(self, user_name, num_samples=1, delay=1):
         """
-        Enroll a new user by recording voice samples.
+        Enroll a new user by recording voice and extracting embedding.
         
         Args:
             user_name (str): Name of the user to enroll
-            num_samples (int): Number of voice samples to record (default is 1)
-            delay (int): Delay between recordings in seconds
+            num_samples (int): Number of voice samples to record (kept for compatibility, always uses 1)
+            delay (int): Delay between recordings in seconds (not used, kept for compatibility)
             
         Returns:
             bool: True if enrollment was successful, False otherwise
@@ -220,17 +237,31 @@ class VoiceRecognizer:
         print("Please speak clearly for voice recognition.")
         
         # Record audio sample
-        audio_path = self.record_audio(duration=15)
+        temp_audio_path = self.record_audio(duration=15)
         
-        # Extract speaker embedding
-        embedding = self.extract_speaker_embedding(audio_path)
+        # Check if the audio is valid
+        try:
+            with wave.open(temp_audio_path, 'rb') as wf:
+                if wf.getnframes() == 0:
+                    print("Error: Recorded audio file is empty.")
+                    if os.path.exists(temp_audio_path):
+                        os.remove(temp_audio_path)
+                    return False
+        except Exception as e:
+            print(f"Error checking audio file: {e}")
+            if os.path.exists(temp_audio_path):
+                os.remove(temp_audio_path)
+            return False
+        
+        # Extract embedding
+        embedding = self.extract_speaker_embedding(temp_audio_path)
         
         # Clean up temporary audio file
-        if os.path.exists(audio_path):
-            os.remove(audio_path)
+        if os.path.exists(temp_audio_path):
+            os.remove(temp_audio_path)
         
         if embedding is not None:
-            # Store the embedding directly
+            # Store the embedding
             self.speaker_embeddings[user_name] = embedding
             
             # Save updated embeddings
@@ -260,71 +291,70 @@ class VoiceRecognizer:
             print("No enrolled speakers. Please enroll a user first.")
             return False, None
         
+        # Record audio if not provided
+        temp_audio_recorded = False
         if audio_path is None:
             audio_path = self.record_audio()
+            temp_audio_recorded = True
         
-        # Extract speaker embedding
-        embedding = self.extract_speaker_embedding(audio_path)
-        
-        if embedding is None:
+        # Check if the recorded audio is valid
+        try:
+            with wave.open(audio_path, 'rb') as wf:
+                if wf.getnframes() == 0:
+                    print("Error: Recorded audio file is empty.")
+                    if temp_audio_recorded and os.path.exists(audio_path):
+                        os.remove(audio_path)
+                    return False, None
+        except Exception as e:
+            print(f"Error checking recorded audio: {e}")
+            if temp_audio_recorded and os.path.exists(audio_path):
+                os.remove(audio_path)
             return False, None
         
-        # Compare with enrolled speakers using cosine similarity
+        # Extract embedding from the recorded audio
+        current_embedding = self.extract_speaker_embedding(audio_path)
+        
+        # Clean up temporary audio file
+        if temp_audio_recorded and os.path.exists(audio_path):
+            os.remove(audio_path)
+        
+        if current_embedding is None:
+            return False, None
+        
+        # Compare with enrolled speakers using the verification model's scoring
         best_match = None
         best_score = -float('inf')  # Initialize with lowest possible score
         
         for name, stored_embedding in self.speaker_embeddings.items():
             try:
-                # Compute cosine similarity (higher is better)
-                score = self._compute_similarity(embedding, stored_embedding)
+                # Convert embeddings if needed
+                if isinstance(stored_embedding, np.ndarray):
+                    stored_embedding = torch.from_numpy(stored_embedding)
                 
-                print(f"Similarity score for {name}: {score:.4f}")
+                # Use the verification model's scoring function
+                # This is the same function used internally by verify_files
+                score = self.verification_model.similarity(current_embedding.unsqueeze(0), 
+                                                           stored_embedding.unsqueeze(0))
+                score = score.item()  # Convert from tensor to scalar
+                
+                print(f"Verification score for {name}: {score:.4f}")
                 
                 if score > best_score:
                     best_score = score
                     best_match = name
             except Exception as e:
-                print(f"Error comparing with user {name}: {e}")
+                print(f"Error verifying with user {name}: {e}")
+                import traceback
+                traceback.print_exc()
                 continue
         
-        # Clean up temporary audio file
-        if os.path.exists(audio_path) and audio_path.startswith(self.voice_data_path):
-            os.remove(audio_path)
-        
         # Verify if the best match is above the threshold
-        # Note: For cosine similarity, higher is better (opposite of distance)
         if best_match and best_score > self.verification_threshold:
             print(f"Speaker verified as {best_match} (score: {best_score:.4f})")
             return True, best_match
         else:
             print(f"Speaker not verified (best score: {best_score:.4f}, threshold: {self.verification_threshold})")
             return False, None
-    
-    def _compute_similarity(self, embedding1, embedding2):
-        """
-        Compute cosine similarity between two embeddings.
-        
-        Args:
-            embedding1 (torch.Tensor): First embedding
-            embedding2 (torch.Tensor): Second embedding
-            
-        Returns:
-            float: Cosine similarity score (higher means more similar)
-        """
-        # Ensure embeddings are torch tensors with correct shape
-        if isinstance(embedding1, np.ndarray):
-            embedding1 = torch.from_numpy(embedding1)
-        if isinstance(embedding2, np.ndarray):
-            embedding2 = torch.from_numpy(embedding2)
-        
-        # Normalize embeddings (required for cosine similarity)
-        embedding1 = embedding1 / torch.norm(embedding1)
-        embedding2 = embedding2 / torch.norm(embedding2)
-        
-        # Compute cosine similarity (dot product of normalized vectors)
-        similarity = torch.dot(embedding1.flatten(), embedding2.flatten()).item()
-        
-        return similarity
 
 
 if __name__ == "__main__":
