@@ -36,6 +36,7 @@ class VoiceRecognizer:
         
         # Speech recognition for transcription
         self.recognizer = sr.Recognizer()
+        self.similarity = torch.nn.CosineSimilarity(dim=-1, eps=1e-6)
         
         # Speaker embeddings and user names
         self.speaker_embeddings = {}
@@ -46,7 +47,7 @@ class VoiceRecognizer:
             from speechbrain.inference.speaker import EncoderClassifier
             
             print("Loading SpeechBrain speaker verification model...")
-            self.verification_model = EncoderClassifier.from_hparams(
+            self.encoder_model = EncoderClassifier.from_hparams(
                 source="speechbrain/spkrec-ecapa-voxceleb",
                 savedir=os.path.join(self.model_path, "speechbrain_spkrec")
             )
@@ -186,10 +187,10 @@ class VoiceRecognizer:
         try:
             print(f"Extracting embedding from {audio_path}")
             # Load audio using speechbrain's method or convert your audio file
-            signal = self.verification_model.load_audio(audio_path)
+            signal = self.encoder_model.load_audio(audio_path)
             
             # Get embedding (the model handles any necessary preprocessing)
-            embedding = self.verification_model.encode_batch(signal.unsqueeze(0))
+            embedding = self.encoder_model.encode_batch(signal.unsqueeze(0))
             
             print(f"Embedding extracted successfully, shape: {embedding.shape}")
             return embedding.squeeze(0)  # Remove batch dimension
@@ -310,19 +311,20 @@ class VoiceRecognizer:
             
         Returns:
             float: Cosine similarity score (higher means more similar)
-        """
+        """        
         # Ensure embeddings are torch tensors with correct shape
         if isinstance(embedding1, np.ndarray):
             embedding1 = torch.from_numpy(embedding1)
         if isinstance(embedding2, np.ndarray):
             embedding2 = torch.from_numpy(embedding2)
         
-        # Normalize embeddings (required for cosine similarity)
-        embedding1 = embedding1 / torch.norm(embedding1)
-        embedding2 = embedding2 / torch.norm(embedding2)
+        # Reshape tensors for compatibility with torch.nn.CosineSimilarity
+        # CosineSimilarity expects [batch_size, vector_dim]
+        embedding1 = embedding1.view(1, -1)
+        embedding2 = embedding2.view(1, -1)
         
-        # Compute cosine similarity (dot product of normalized vectors)
-        similarity = torch.dot(embedding1.flatten(), embedding2.flatten()).item()
+        # Use the torch.nn.CosineSimilarity instance
+        similarity = self.similarity(embedding1, embedding2).item()
         
         return similarity
 
