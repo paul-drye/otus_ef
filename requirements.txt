@@ -1,0 +1,12 @@
+opencv-python
+face_recognition
+SpeechRecognition
+speechbrain
+torch
+torchaudio
+tqdm
+pyttsx3
+# gTTS # Uncomment if you prefer Google TTS
+PyAudio # Required by SpeechRecognition for microphone input
+dlib # Required by face_recognition
+PyYAML # For loading config

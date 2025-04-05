@@ -1,0 +1,205 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Python: Current File",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal",
+            "justMyCode": true
+        },
+        {
+            "name": "Voice Recognition: Record",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "tests.test_voice_recognition",
+            "args": ["record", "--duration", "5"],
+            "console": "integratedTerminal",
+            "justMyCode": false
+        },
+        {
+            "name": "Voice Recognition: Transcribe",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "tests.test_voice_recognition",
+            "args": ["transcribe"],
+            "console": "integratedTerminal",
+            "justMyCode": false
+        },
+        {
+            "name": "Voice Recognition: Model",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "tests.test_voice_recognition",
+            "args": ["model"],
+            "console": "integratedTerminal",
+            "justMyCode": false
+        },
+        {
+            "name": "Voice Recognition: Enroll",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "tests.test_voice_recognition",
+            "args": ["enroll", "--name", "Debug", "--samples", "2"],
+            "console": "integratedTerminal",
+            "justMyCode": false
+        },
+        {
+            "name": "Voice Recognition: Verify",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "tests.test_voice_recognition",
+            "args": ["verify"],
+            "console": "integratedTerminal",
+            "justMyCode": false
+        },
+        {
+            "name": "SpeechBrain: Model Loading",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "tests.test_speechbrain_verification",
+            "args": ["model"],
+            "console": "integratedTerminal",
+            "justMyCode": false
+        },
+        {
+            "name": "SpeechBrain: Embedding Extraction",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "tests.test_speechbrain_verification",
+            "args": ["embedding"],
+            "console": "integratedTerminal",
+            "justMyCode": false
+        },
+        {
+            "name": "SpeechBrain: Enrollment",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "tests.test_speechbrain_verification",
+            "args": ["enroll", "--name", "Debug"],
+            "console": "integratedTerminal",
+            "justMyCode": false
+        },
+        {
+            "name": "SpeechBrain: Verification",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "tests.test_speechbrain_verification",
+            "args": ["verify"],
+            "console": "integratedTerminal",
+            "justMyCode": false
+        },
+        {
+            "name": "SpeechBrain: Verify with Enrollment",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "tests.test_speechbrain_verification",
+            "args": ["verify", "--enroll-first"],
+            "console": "integratedTerminal",
+            "justMyCode": false
+        },
+        {
+            "name": "SpeechBrain: Similarity Test",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "tests.test_speechbrain_verification",
+            "args": ["similarity"],
+            "console": "integratedTerminal",
+            "justMyCode": false
+        },
+        {
+            "name": "SpeechBrain: All Tests",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "tests.test_speechbrain_verification",
+            "args": ["all"],
+            "console": "integratedTerminal",
+            "justMyCode": false
+        },
+        {
+            "name": "Audio: List Devices",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "tests.test_audio",
+            "args": ["list"],
+            "console": "integratedTerminal",
+            "justMyCode": false
+        },
+        {
+            "name": "Audio: Record",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "tests.test_audio",
+            "args": ["record", "--duration", "5"],
+            "console": "integratedTerminal",
+            "justMyCode": false
+        },
+        {
+            "name": "Audio: Play",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "tests.test_audio",
+            "args": ["play"],
+            "console": "integratedTerminal",
+            "justMyCode": false
+        },
+        {
+            "name": "Face Recognition: Detection",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "tests.test_face_recognition",
+            "args": ["detection", "--time", "5"],
+            "console": "integratedTerminal",
+            "justMyCode": false
+        },
+        {
+            "name": "Face Recognition: Enrollment",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "tests.test_face_recognition",
+            "args": ["enrollment", "--name", "Debug", "--samples", "2"],
+            "console": "integratedTerminal",
+            "justMyCode": false
+        },
+        {
+            "name": "Face Recognition: Recognition",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "tests.test_face_recognition",
+            "args": ["recognition", "--time", "5"],
+            "console": "integratedTerminal",
+            "justMyCode": false
+        },
+        {
+            "name": "Integration: Full Flow",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "tests.test_integration",
+            "args": ["full-flow"],
+            "console": "integratedTerminal",
+            "justMyCode": false
+        },
+        {
+            "name": "Integration: Face Only",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "tests.test_integration",
+            "args": ["face"],
+            "console": "integratedTerminal",
+            "justMyCode": false
+        },
+        {
+            "name": "Integration: Voice Only",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "tests.test_integration",
+            "args": ["voice"],
+            "console": "integratedTerminal",
+            "justMyCode": false
+        }
+    ]
+}

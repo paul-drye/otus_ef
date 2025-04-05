@@ -1,0 +1,20 @@
+audio_device:
+  input_device_index: 11
+face_recognition:
+  camera_index: 0
+  frame_height: 480
+  frame_width: 640
+  scale_factor: 0.25
+  tolerance: 0.6
+paths:
+  face_data: data/faces
+  models: models
+  voice_data: data/voices
+robot_interaction:
+  voice_rate: 150
+  voice_volume: 1.0
+voice_recognition:
+  record_duration: 5
+  sample_rate: 16000
+  verification_threshold: 0.75
+
